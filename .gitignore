@@ -1,0 +1,17 @@
+# Local runtime state (contains machine-specific download dir / login flag)
+config.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Hugging Face download temp files
+*.incomplete
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp

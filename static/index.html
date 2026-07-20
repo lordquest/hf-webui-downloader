@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>HF WebUI Downloader</title>
+<style>
+  :root { --bg:#0f1115; --panel:#1a1d24; --border:#2a2f3a; --fg:#e6e6e6;
+          --muted:#9aa3b2; --accent:#4f8cff; --ok:#3ecf8e; --err:#ff6b6b;
+          --warn:#ffb454; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:var(--bg); color:var(--fg); }
+  header { padding:14px 20px; border-bottom:1px solid var(--border);
+           display:flex; align-items:center; justify-content:space-between; }
+  header h1 { font-size:18px; margin:0; }
+  .wrap { max-width:960px; margin:0 auto; padding:20px; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:10px;
+          padding:16px; margin-bottom:16px; }
+  label { display:block; font-size:13px; color:var(--muted); margin-bottom:6px; }
+  input[type=text] { width:100%; padding:10px 12px; background:#0d0f13; color:var(--fg);
+          border:1px solid var(--border); border-radius:8px; font-size:14px; }
+  .row { display:flex; gap:10px; }
+  .row > * { flex:1; }
+  button { background:var(--accent); color:#fff; border:none; border-radius:8px;
+           padding:10px 16px; font-size:14px; cursor:pointer; }
+  button:hover { filter:brightness(1.1); }
+  button.ghost { background:#262b36; color:var(--fg); }
+  button.danger { background:transparent; color:var(--err); border:1px solid var(--err); }
+  button.small { padding:5px 10px; font-size:12px; }
+  .files { max-height:420px; overflow:auto; border:1px solid var(--border);
+           border-radius:8px; }
+  .file { display:flex; align-items:center; gap:10px; padding:9px 12px;
+          border-bottom:1px solid var(--border); font-size:13px; }
+  .file:last-child { border-bottom:none; }
+  .file input { width:16px; height:16px; }
+  .file .name { flex:1; word-break:break-all; }
+  .file .size { color:var(--muted); white-space:nowrap; }
+  /* download progress rows (independent of .file above) */
+  .prow { padding:11px 12px; border-bottom:1px solid var(--border); font-size:13px; }
+  .prow:last-child { border-bottom:none; }
+  .prow .top { display:flex; align-items:center; gap:10px; }
+  .prow .pname { flex:1; min-width:0; word-break:break-word; line-height:1.4; }
+  .prow .acts { display:flex; gap:6px; align-items:center; white-space:nowrap; }
+  .prow .bottom { margin-top:7px; }
+  .prow .prog { font-size:12px; color:var(--muted); margin-top:5px;
+                white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bar { height:6px; background:#0d0f13; border-radius:4px; overflow:hidden; margin-top:6px; }
+  .bar > i { display:block; height:100%; width:0; background:var(--accent); transition:width .3s; }
+  .status { font-size:12px; padding:2px 8px; border-radius:20px; white-space:nowrap; }
+  .s-pending { background:#2a2f3a; color:var(--muted); }
+  .s-downloading { background:#15315a; color:var(--accent); }
+  .s-done { background:#133a2b; color:var(--ok); }
+  .s-exists { background:#2a2f1a; color:var(--warn); }
+  .s-failed { background:#3a1717; color:var(--err); }
+  .s-cancelled { background:#2a2f3a; color:var(--muted); }
+  .meta { font-size:12px; color:var(--muted); margin-top:6px; }
+  .msg { font-size:13px; padding:8px 10px; border-radius:8px; margin-top:10px; }
+  .msg.err { background:#3a1717; color:var(--err); }
+  .msg.ok { background:#133a2b; color:var(--ok); }
+  .banner { display:flex; flex-wrap:wrap; gap:10px; align-items:center; font-size:13px;
+            padding:10px 14px; border-radius:8px; margin-bottom:14px;
+            background:#33270a; color:var(--warn); border:1px solid #5a4410; }
+  .banner.err { background:#3a1717; color:var(--err); border-color:#5a1717; }
+  .banner code { background:rgba(255,255,255,.08); padding:1px 6px; border-radius:4px; }
+  .banner a { color:var(--warn); text-decoration:underline; }
+  .banner .spacer { flex:1; }
+  .banner .loginbox { display:flex; gap:8px; align-items:center; flex-basis:100%; margin-top:4px; }
+  .banner input[type=text] { width:320px; }
+  .loginbadge { font-size:12px; padding:3px 10px; border-radius:20px; white-space:nowrap;
+                display:inline-flex; align-items:center; gap:6px; }
+  .loginbadge::before { content:""; width:7px; height:7px; border-radius:50%; background:currentColor; }
+  .lb-ok { background:#133a2b; color:var(--ok); }
+  .lb-warn { background:#33270a; color:var(--warn); }
+  #overallText.done { background:#133a2b; color:var(--ok); padding:3px 10px; border-radius:20px; }
+  .hidden { display:none; }
+  .topbar { display:flex; gap:10px; align-items:center; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🤗 HF WebUI Downloader</h1>
+  <div class="topbar">
+    <span id="loginBadge" class="loginbadge lb-warn">检测中…</span>
+    <button class="ghost small" id="btnSettings" data-i18n="settingsBtn">⚙ 设置</button>
+  </div>
+</header>
+
+<!-- HF token status banner (non-blocking) -->
+<div id="tokenBanner" class="banner hidden">
+  <span data-i18n="tokenBanner.text">⚠ 未检测到有效 HF token,受限仓库可能下载慢/被拒。</span>
+  <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener" data-i18n="tokenCreate">去创建 token</a>
+  <span class="spacer"></span>
+  <button class="ghost small" id="btnTokenLogin" data-i18n="tokenLoginBtn">登录</button>
+  <div id="tokenLoginBox" class="loginbox hidden">
+    <input type="text" id="tokenInput" data-i18n-ph="tokenPlaceholder" placeholder="粘贴 HF token (hf_...)" />
+    <button id="btnTokenSubmit" data-i18n="tokenLoginSubmit">登录</button>
+    <span id="tokenMsg" class="hidden"></span>
+  </div>
+</div>
+
+<!-- Dependency check banner (red, non-blocking) -->
+<div id="depBanner" class="banner err hidden">
+  <span data-i18n="depBanner.text">⚠ 缺少必要依赖,无法下载:</span>
+  <span id="depList"></span>
+  <span data-i18n="depAfter">请运行 <code id="depCmd">pip install -r requirements.txt</code> 后重启。</span>
+</div>
+
+<div class="wrap">
+
+  <!-- Repo input -->
+  <div class="card">
+    <label data-i18n="repoLabel">粘贴 Hugging Face 仓库网址或 repo_id</label>
+    <div class="row">
+      <input type="text" id="repoInput" data-i18n-ph="repoPlaceholder" placeholder="https://huggingface.co/owner/repo" />
+      <button id="btnList" data-i18n="btnList">解析并列举</button>
+    </div>
+    <div id="repoMsg" class="msg hidden"></div>
+    <div id="repoMeta" class="meta hidden"></div>
+  </div>
+
+  <!-- File list -->
+  <div class="card hidden" id="filesCard">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div>
+        <label style="margin:0;" data-i18n="filesLabel">选择要下载的文件</label>
+        <span class="meta" id="selCount"></span>
+      </div>
+      <div>
+        <button class="ghost small" id="btnAll" data-i18n="btnAll">全选</button>
+        <button class="ghost small" id="btnNone" data-i18n="btnNone">清空</button>
+      </div>
+    </div>
+    <div class="files" id="fileList"></div>
+    <div style="margin-top:12px;display:flex;gap:10px;align-items:center;">
+      <button id="btnDownload" data-i18n="btnDownload">⬇ 开始下载</button>
+      <div id="overall" class="hidden" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">
+        <div style="flex:1;min-width:0;height:6px;background:#0d0f13;border-radius:4px;overflow:hidden;">
+          <i id="overallBar" style="display:block;height:100%;width:0;background:var(--accent);transition:width .3s;"></i>
+        </div>
+        <span id="overallText" class="meta" style="white-space:nowrap;margin:0;"></span>
+      </div>
+    </div>
+    <div class="meta" id="dlTarget" style="margin-top:6px;word-break:break-all;"></div>
+  </div>
+
+  <!-- Progress -->
+  <div class="card hidden" id="progressCard">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <label style="margin:0;" data-i18n="progressLabel">下载进度</label>
+      <button class="ghost small" id="btnCloseProg" data-i18n="btnCloseProg">收起</button>
+    </div>
+    <div class="files" id="progressList" style="margin-top:10px;"></div>
+  </div>
+
+</div>
+
+<!-- Settings modal -->
+<div id="settingsModal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;">
+  <div class="card" style="width:420px;margin:0;">
+    <h3 style="margin-top:0;" data-i18n="settingsTitle">设置</h3>
+    <label data-i18n="setDirLabel">默认下载目录(留空=工具所在目录)</label>
+    <input type="text" id="setDir" data-i18n-ph="setDirPlaceholder" placeholder="例如 F:\download" />
+    <label style="margin-top:12px;" data-i18n="setEndpointLabel">镜像站地址(留空=官方 huggingface.co)</label>
+    <input type="text" id="setEndpoint" data-i18n-ph="setEndpointPlaceholder" placeholder="例如 https://hf-mirror.com" />
+    <label style="margin-top:12px;" data-i18n="langLabel">语言</label>
+    <select id="setLang" style="width:100%;padding:10px 12px;background:#0d0f13;color:var(--fg);border:1px solid var(--border);border-radius:8px;font-size:14px;">
+      <option value="zh">中文</option>
+      <option value="en">English</option>
+    </select>
+    <div id="setMsg" class="msg hidden"></div>
+    <div style="margin-top:14px;display:flex;gap:10px;justify-content:flex-end;">
+      <button class="ghost" id="btnSetCancel" data-i18n="btnSetCancel">取消</button>
+      <button id="btnSetSave" data-i18n="btnSetSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let currentRepo = null;   // {repo_id, repo_type, revision, subpath}
+let taskId = null;
+let selectedPaths = new Set();
+let sse = null;
+let overallStart = null;  // {t0, b0} for overall ETA
+let LANG = "zh";
+let lastLoginStatus = null;  // last detected HF login status, for re-translation on language switch
+let lastTargetDir = null;    // last shown target dir, for re-translation on language switch
+
+// ---------------------------------------------------------------------------
+// i18n
+// ---------------------------------------------------------------------------
+const I18N = {
+  zh: {
+    "badge.detecting": "检测中…",
+    "badge.logged_in": "已登录(HF token 有效)",
+    "badge.invalid": "token 失效,请重新登录",
+    "badge.missing": "未登录",
+    "settingsBtn": "⚙ 设置",
+    "tokenBanner.text": "⚠ 未检测到有效 HF token,受限仓库可能下载慢/被拒。",
+    "tokenCreate": "去创建 token",
+    "tokenLoginBtn": "登录",
+    "tokenLoginSubmit": "登录",
+    "tokenPlaceholder": "粘贴 HF token (hf_...)",
+    "tokenLoginFail": "登录失败: ",
+    "depBanner.text": "⚠ 缺少必要依赖,无法下载:",
+    "depAfter": "请运行 pip install -r requirements.txt 后重启。",
+    "repoLabel": "粘贴 Hugging Face 仓库网址或 repo_id",
+    "repoPlaceholder": "https://huggingface.co/owner/repo",
+    "btnList": "解析并列举",
+    "repoEmpty": "请先粘贴仓库网址或 repo_id",
+    "repoReqFail": "请求失败: ",
+    "filesLabel": "选择要下载的文件",
+    "selCount": (n) => `已选 ${n} 个`,
+    "btnAll": "全选",
+    "btnNone": "清空",
+    "btnDownload": "⬇ 开始下载",
+    "progressLabel": "下载进度",
+    "btnCloseProg": "收起",
+    "settingsTitle": "设置",
+    "setDirLabel": "默认下载目录(留空=工具所在目录)",
+    "setDirPlaceholder": "例如 F:\\download",
+    "setEndpointLabel": "镜像站地址(留空=官方 huggingface.co)",
+    "setEndpointPlaceholder": "例如 https://hf-mirror.com",
+    "langLabel": "语言",
+    "btnSetCancel": "取消",
+    "btnSetSave": "保存",
+    "setSaved": "已保存",
+    "setSaveFail": "保存失败: ",
+    "downloadTo": (d) => "下载到: " + d,
+    "noSelect": "请先选择至少一个文件",
+    "overallDone": "✓ 已完成",
+  },
+  en: {
+    "badge.detecting": "Checking…",
+    "badge.logged_in": "Logged in (HF token valid)",
+    "badge.invalid": "Token invalid, please login again",
+    "badge.missing": "Not logged in",
+    "settingsBtn": "⚙ Settings",
+    "tokenBanner.text": "⚠ No valid HF token detected; restricted repos may download slowly or be rejected.",
+    "tokenCreate": "Create a token",
+    "tokenLoginBtn": "Login",
+    "tokenLoginSubmit": "Login",
+    "tokenPlaceholder": "Paste HF token (hf_...)",
+    "tokenLoginFail": "Login failed: ",
+    "depBanner.text": "⚠ Missing required dependencies, cannot download:",
+    "depAfter": "Please run pip install -r requirements.txt and restart.",
+    "repoLabel": "Paste a Hugging Face repo URL or repo_id",
+    "repoPlaceholder": "https://huggingface.co/owner/repo",
+    "btnList": "Parse & list",
+    "repoEmpty": "Please paste a repo URL or repo_id first",
+    "repoReqFail": "Request failed: ",
+    "filesLabel": "Select files to download",
+    "selCount": (n) => `${n} selected`,
+    "btnAll": "Select all",
+    "btnNone": "Clear",
+    "btnDownload": "⬇ Start download",
+    "progressLabel": "Download progress",
+    "btnCloseProg": "Collapse",
+    "settingsTitle": "Settings",
+    "setDirLabel": "Default download directory (empty = tool's own dir)",
+    "setDirPlaceholder": "e.g. F:\\download",
+    "setEndpointLabel": "Mirror endpoint (empty = official huggingface.co)",
+    "setEndpointPlaceholder": "e.g. https://hf-mirror.com",
+    "langLabel": "Language",
+    "btnSetCancel": "Cancel",
+    "btnSetSave": "Save",
+    "setSaved": "Saved",
+    "setSaveFail": "Save failed: ",
+    "downloadTo": (d) => "Download to: " + d,
+    "noSelect": "Please select at least one file",
+    "overallDone": "✓ Done",
+  },
+};
+function T(key, ...args) {
+  const entry = (I18N[LANG] && I18N[LANG][key]) || I18N.zh[key];
+  if (typeof entry === "function") return entry(...args);
+  return entry != null ? entry : key;
+}
+// Apply current language to all static [data-i18n]/[data-i18n-ph] elements + re-render dynamic bits.
+function applyLang(lang) {
+  LANG = (lang === "en") ? "en" : "zh";
+  document.documentElement.lang = (LANG === "en") ? "en" : "zh-CN";
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    el.textContent = T(el.getAttribute("data-i18n"));
+  });
+  document.querySelectorAll("[data-i18n-ph]").forEach(el => {
+    el.setAttribute("placeholder", T(el.getAttribute("data-i18n-ph")));
+  });
+  // re-translate dynamic, state-driven text (must NOT be reset to placeholder)
+  updateSelCount();
+  if (lastLoginStatus !== null) setLoginBadge(lastLoginStatus);
+  if (lastTargetDir) $("dlTarget").textContent = T("downloadTo", lastTargetDir);
+}
+
+function fmtSize(b) {
+  if (b == null || b === 0) return "-";
+  const u = ["B","KB","MB","GB","TB"];
+  let i = 0; while (b >= 1024 && i < u.length-1) { b /= 1024; i++; }
+  return b.toFixed(1) + " " + u[i];
+}
+function fmtEta(sec) {
+  if (!isFinite(sec) || sec <= 0) return "";
+  sec = Math.round(sec);
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  if (h > 0) return `${h} 时 ${m} 分`;
+  if (m > 0) return `${m} 分 ${s} 秒`;
+  return `${s} 秒`;
+}
+function showMsg(el, text, kind) {
+  el.textContent = text; el.className = "msg " + kind; el.classList.remove("hidden");
+}
+
+// --- Dependency check (non-blocking red banner) ---
+async function checkDeps() {
+  try {
+    const r = await fetch("/api/health"); const s = await r.json();
+    if (s.ok) {
+      $("depBanner").classList.add("hidden");
+    } else {
+      $("depList").textContent = (s.missing || []).join(", ");
+      if (s.install_cmd) $("depCmd").textContent = s.install_cmd;
+      $("depBanner").classList.remove("hidden");
+    }
+  } catch (e) { /* ignore */ }
+}
+
+// --- HF token status (non-blocking banner + persistent badge) ---
+function setLoginBadge(status) {
+  lastLoginStatus = status;
+  const b = $("loginBadge");
+  let key = "badge.detecting";
+  if (status === "logged_in") key = "badge.logged_in";
+  else if (status === "invalid") key = "badge.invalid";
+  else if (status === "missing") key = "badge.missing";
+  b.className = "loginbadge " + (status === "logged_in" ? "lb-ok" : "lb-warn");
+  b.textContent = T(key);
+}
+async function checkToken() {
+  try {
+    const r = await fetch("/api/token"); const s = await r.json();
+    setLoginBadge(s.status);
+    if (s.status === "logged_in") {
+      $("tokenBanner").classList.add("hidden");
+    } else {
+      $("tokenBanner").classList.remove("hidden");
+    }
+  } catch (e) {
+    // network error -> don't block UI
+  }
+}
+$("btnTokenLogin").onclick = () => $("tokenLoginBox").classList.toggle("hidden");
+$("btnTokenSubmit").onclick = async () => {
+  const tok = $("tokenInput").value.trim();
+  if (!tok) { showMsg($("tokenMsg"), "请输入 token", "err"); return; }
+  const r = await fetch("/api/token/login", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ token: tok })
+  });
+  const s = await r.json();
+  if (s.status === "logged_in") {
+    $("tokenBanner").classList.add("hidden");
+    $("tokenMsg").className = "hidden";
+    setLoginBadge("logged_in");
+  } else {
+    showMsg($("tokenMsg"), T("tokenLoginFail") + (s.error || "无效 token"), "err");
+  }
+};
+
+// --- Settings ---
+function showSettingsModal() { $("settingsModal").style.display = "flex"; }
+function hideSettingsModal() {
+  $("settingsModal").style.display = "none";
+  $("setMsg").className = "msg hidden";
+}
+async function openSettings() {
+  const r = await fetch("/api/settings"); const s = await r.json();
+  $("setDir").value = (s.download_dir_set && s.download_dir) ? s.download_dir : "";
+  $("setEndpoint").value = s.endpoint || "";
+  $("setLang").value = (s.language === "en") ? "en" : "zh";
+  showSettingsModal();
+}
+$("btnSettings").onclick = openSettings;
+$("btnSetCancel").onclick = hideSettingsModal;
+$("btnSetSave").onclick = async () => {
+  const r = await fetch("/api/settings", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ download_dir: $("setDir").value.trim(),
+                           endpoint: $("setEndpoint").value.trim(),
+                           language: $("setLang").value })
+  });
+  const s = await r.json();
+  if (s.error) { showMsg($("setMsg"), T("setSaveFail") + s.error, "err"); return; }
+  showMsg($("setMsg"), T("setSaved"), "ok");
+  applyLang($("setLang").value);   // immediate, no reload
+  setTimeout(hideSettingsModal, 500);
+};
+
+// --- Show target dir (before download) ---
+async function showTargetDir(repo_id) {
+  try {
+    const r = await fetch("/api/target_dir?repo_id=" + encodeURIComponent(repo_id));
+    const d = await r.json();
+    if (d.target_dir) {
+      lastTargetDir = d.target_dir;
+      $("dlTarget").textContent = T("downloadTo", d.target_dir);
+    }
+  } catch (e) { /* ignore */ }
+}
+
+// --- Parse & list ---
+$("btnList").onclick = async () => {
+  const input = $("repoInput").value.trim();
+  if (!input) {
+    showMsg($("repoMsg"), T("repoEmpty"), "err");
+    $("dlTarget").textContent = "";
+    lastTargetDir = null;
+    return;
+  }
+  $("repoMsg").classList.add("hidden");
+  try {
+    const p = await fetch("/api/parse", { method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({ input }) });
+    const data = await p.json();
+    if (data.error) { showMsg($("repoMsg"), data.error, "err"); $("dlTarget").textContent = ""; return; }
+    currentRepo = data;
+    $("repoMeta").classList.remove("hidden");
+    $("repoMeta").textContent = `repo_id: ${data.repo_id}  |  type: ${data.repo_type}  |  revision: ${data.revision}` + (data.subpath ? `  |  subpath: ${data.subpath}` : "");
+
+    const f = await fetch("/api/files", { method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ repo_id: data.repo_id, revision: data.revision,
+                             subpath: data.subpath, repo_type: data.repo_type }) });
+    const fd = await f.json();
+    if (fd.error) { showMsg($("repoMsg"), fd.error, "err"); return; }
+    renderFiles(fd.files);
+    $("filesCard").classList.remove("hidden");
+    $("filesCard").scrollIntoView({behavior:"smooth"});
+    showTargetDir(data.repo_id);
+  } catch (e) {
+    showMsg($("repoMsg"), T("repoReqFail") + e, "err");
+  }
+};
+
+function renderFiles(files) {
+  const box = $("fileList"); box.innerHTML = "";
+  selectedPaths = new Set();
+  window.fileSizes = {};
+  files.forEach(f => {
+    window.fileSizes[f.path] = f.size || 0;
+    const div = document.createElement("div");
+    div.className = "file";
+    div.innerHTML = `<input type="checkbox" data-path="${f.path}" />
+      <span class="name">${f.path}</span>
+      <span class="size">${fmtSize(f.size)}</span>`;
+    const cb = div.querySelector("input");
+    cb.onchange = () => {
+      if (cb.checked) selectedPaths.add(f.path); else selectedPaths.delete(f.path);
+      updateSelCount();
+    };
+    box.appendChild(div);
+  });
+  updateSelCount();
+}
+function updateSelCount() {
+  $("selCount").textContent = T("selCount", selectedPaths.size);
+}
+$("btnAll").onclick = () => {
+  document.querySelectorAll("#fileList input").forEach(c => { c.checked = true; selectedPaths.add(c.dataset.path); });
+  updateSelCount();
+};
+$("btnNone").onclick = () => {
+  document.querySelectorAll("#fileList input").forEach(c => { c.checked = false; });
+  selectedPaths.clear(); updateSelCount();
+};
+
+// --- Overall progress (button right) ---
+const TERMINAL = new Set(["done", "exists", "failed", "cancelled"]);
+function updateOverall(files) {
+  const box = $("overall");
+  if (!files || files.length === 0) { box.classList.add("hidden"); return; }
+  const got = files.reduce((a, f) => a + (f.downloaded || 0), 0);
+  const tot = files.reduce((a, f) => a + (f.total || 0), 0);
+  const allDone = files.every(f => TERMINAL.has(f.status));
+  box.classList.remove("hidden");
+
+  if (allDone) {
+    $("overallBar").style.width = "100%";
+    const t = $("overallText");
+    t.textContent = T("overallDone");
+    t.className = "meta done";
+    return;
+  }
+  const pct = tot ? Math.min(100, Math.round(got / tot * 100)) : 0;
+  $("overallBar").style.width = pct + "%";
+  const t = $("overallText");
+  t.className = "meta";
+  let extra = "";
+  if (overallStart && got > overallStart.b0) {
+    const dt = (Date.now() - overallStart.t0) / 1000;
+    const db = got - overallStart.b0;
+    if (dt > 1 && db > 0) {
+      const avg = db / dt;
+      const eta = (tot - got) / avg;
+      extra = "  ·  预计剩余 " + fmtEta(eta);
+    }
+  }
+  t.textContent = `${fmtSize(got)} / ${fmtSize(tot)}${extra}`;
+}
+
+// --- Download ---
+$("btnDownload").onclick = async () => {
+  if (!currentRepo || selectedPaths.size === 0) {
+    showMsg($("repoMsg"), T("noSelect"), "err"); return;
+  }
+  const files = [...selectedPaths].map(p => ({ path: p, size: window.fileSizes[p] || 0 }));
+  const body = {
+    repo_id: currentRepo.repo_id, revision: currentRepo.revision,
+    repo_type: currentRepo.repo_type, files, task_id: taskId
+  };
+  const r = await fetch("/api/download", { method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+  const d = await r.json();
+  if (d.error) { showMsg($("repoMsg"), d.error, "err"); return; }
+  taskId = d.task_id;
+  lastTargetDir = d.target_dir;
+  $("dlTarget").textContent = T("downloadTo", d.target_dir);
+  $("progressCard").classList.remove("hidden");
+  overallStart = { t0: Date.now(), b0: 0 };
+  startSSE(taskId);
+};
+
+function startSSE(tid) {
+  if (sse) sse.close();
+  const list = $("progressList"); list.innerHTML = "";
+  const rows = {};
+  const allFiles = {};  // path -> latest file state, for overall progress
+  const dlStart = {};  // path -> {t0, b0} first download sample, for avg speed & ETA
+  function ensureRow(f) {
+    if (!rows[f.path]) {
+      const div = document.createElement("div");
+      div.className = "prow";
+      div.innerHTML = `<div class="top">
+          <span class="pname"></span>
+          <span class="status s-pending">pending</span>
+          <span class="acts">
+            <button class="ghost small act-cancel">取消</button>
+            <button class="ghost small act-retry hidden">重试</button>
+          </span>
+        </div>
+        <div class="bottom">
+          <div class="bar"><i></i></div>
+          <div class="prog"></div>
+        </div>`;
+      div.querySelector(".pname").textContent = f.path;
+      list.appendChild(div);
+      rows[f.path] = div;
+      div.querySelector(".act-cancel").onclick = () => cancelFile(tid, f.path);
+      div.querySelector(".act-retry").onclick = () => retryFile(tid, f.path);
+    }
+    return rows[f.path];
+  }
+  function updateRow(f) {
+    const div = ensureRow(f);
+    const st = div.querySelector(".status");
+    st.className = "status s-" + f.status;
+    st.textContent = f.status;
+    const pct = f.total ? Math.min(100, Math.round(f.downloaded / f.total * 100)) : 0;
+    div.querySelector(".bar > i").style.width = pct + "%";
+
+    // average speed + ETA derived from first download sample (stable, not instantaneous)
+    let extra = "";
+    if (f.status === "downloading" && f.total) {
+      const now = Date.now();
+      if (!dlStart[f.path]) dlStart[f.path] = { t0: now, b0: f.downloaded };
+      const dt = (now - dlStart[f.path].t0) / 1000;
+      const db = f.downloaded - dlStart[f.path].b0;
+      if (dt > 1 && db > 0) {
+        const avg = db / dt;                       // bytes/s average
+        const eta = (f.total - f.downloaded) / avg;
+        extra = `  ·  ${fmtSize(avg)}/s  ·  预计剩余 ${fmtEta(eta)}`;
+      }
+    } else {
+      delete dlStart[f.path];
+    }
+    div.querySelector(".prog").textContent =
+      `${fmtSize(f.downloaded)} / ${fmtSize(f.total)}` + extra;
+    div.querySelector(".act-cancel").classList.toggle("hidden", !(f.status==="downloading" || f.status==="pending"));
+    div.querySelector(".act-retry").classList.toggle("hidden", !(f.status==="failed" || f.status==="cancelled"));
+  }
+
+  sse = new EventSource("/api/progress?task_id=" + tid);
+  sse.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === "snapshot" || msg.type === "done") {
+      msg.files.forEach(f => { allFiles[f.path] = f; });
+      msg.files.forEach(updateRow);
+      updateOverall(Object.values(allFiles));
+    } else if (msg.type === "update") {
+      allFiles[msg.file.path] = msg.file;
+      updateRow(msg.file);
+      updateOverall(Object.values(allFiles));
+    }
+  };
+  sse.onerror = () => { /* will auto-reconnect, or task finished */ };
+}
+function cancelFile(tid, path) {
+  fetch("/api/cancel", { method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ task_id: tid, path }) });
+}
+function retryFile(tid, path) {
+  fetch("/api/retry", { method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ task_id: tid, path }) });
+}
+$("btnCloseProg").onclick = () => { if (sse) sse.close(); $("progressCard").classList.add("hidden"); };
+
+// on page load: determine language (config > system), then apply + persist + checks
+(async function initLang() {
+  let lang = null;
+  try {
+    const r = await fetch("/api/settings"); const s = await r.json();
+    if (s.language === "en" || s.language === "zh") lang = s.language;
+  } catch (e) { /* ignore */ }
+  if (!lang) {
+    // follow system display language (browser UI language)
+    lang = (/^zh/i.test(navigator.language || "")) ? "zh" : "en";
+    // persist only the detection result, do not change the system
+    try {
+      await fetch("/api/settings", { method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ language: lang }) });
+    } catch (e) { /* ignore */ }
+  }
+  applyLang(lang);
+})();
+checkDeps();
+checkToken();
+</script>
+</body>
+</html>
