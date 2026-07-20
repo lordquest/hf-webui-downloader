@@ -1,7 +1,5 @@
 # HF WebUI Downloader
 
-> Author: **lordquest** — lordquest@163.com
-
 跨平台的 Hugging Face 图形界面下载工具(WebUI)。输入仓库网页 URL 或 `owner/repo`,
 自动列出可下载文件(可勾选),点击下载即可逐文件下载,带实时进度、取消、重试。
 
@@ -47,6 +45,5 @@ uvicorn app:app --host 127.0.0.1 --port 8000
 | POST | `/api/retry` | 重试单个文件 |
 
 ## Author
-
 - **lordquest**
 - Email: lordquest@163.com
