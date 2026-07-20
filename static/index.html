@@ -231,6 +231,9 @@ const I18N = {
     "downloadTo": (d) => "下载到: " + d,
     "noSelect": "请先选择至少一个文件",
     "overallDone": "✓ 已完成",
+    "etaLabel": "预计剩余",
+    "eta.h": "时", "eta.m": "分", "eta.s": "秒",
+    "cancel": "取消", "retry": "重试",
   },
   en: {
     "badge.detecting": "Checking…",
@@ -271,6 +274,9 @@ const I18N = {
     "downloadTo": (d) => "Download to: " + d,
     "noSelect": "Please select at least one file",
     "overallDone": "✓ Done",
+    "etaLabel": "ETA",
+    "eta.h": "h", "eta.m": "m", "eta.s": "s",
+    "cancel": "Cancel", "retry": "Retry",
   },
 };
 function T(key, ...args) {
@@ -304,9 +310,9 @@ function fmtEta(sec) {
   if (!isFinite(sec) || sec <= 0) return "";
   sec = Math.round(sec);
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
-  if (h > 0) return `${h} 时 ${m} 分`;
-  if (m > 0) return `${m} 分 ${s} 秒`;
-  return `${s} 秒`;
+  if (h > 0) return `${h} ${T("eta.h")} ${m} ${T("eta.m")}`;
+  if (m > 0) return `${m} ${T("eta.m")} ${s} ${T("eta.s")}`;
+  return `${s} ${T("eta.s")}`;
 }
 function showMsg(el, text, kind) {
   el.textContent = text; el.className = "msg " + kind; el.classList.remove("hidden");
@@ -503,7 +509,7 @@ function updateOverall(files) {
     if (dt > 1 && db > 0) {
       const avg = db / dt;
       const eta = (tot - got) / avg;
-      extra = "  ·  预计剩余 " + fmtEta(eta);
+      extra = "  ·  " + T("etaLabel") + " " + fmtEta(eta);
     }
   }
   t.textContent = `${fmtSize(got)} / ${fmtSize(tot)}${extra}`;
@@ -545,8 +551,8 @@ function startSSE(tid) {
           <span class="pname"></span>
           <span class="status s-pending">pending</span>
           <span class="acts">
-            <button class="ghost small act-cancel">取消</button>
-            <button class="ghost small act-retry hidden">重试</button>
+            <button class="ghost small act-cancel">${T("cancel")}</button>
+            <button class="ghost small act-retry hidden">${T("retry")}</button>
           </span>
         </div>
         <div class="bottom">
@@ -579,7 +585,7 @@ function startSSE(tid) {
       if (dt > 1 && db > 0) {
         const avg = db / dt;                       // bytes/s average
         const eta = (f.total - f.downloaded) / avg;
-        extra = `  ·  ${fmtSize(avg)}/s  ·  预计剩余 ${fmtEta(eta)}`;
+        extra = `  ·  ${fmtSize(avg)}/s  ·  ${T("etaLabel")} ${fmtEta(eta)}`;
       }
     } else {
       delete dlStart[f.path];
