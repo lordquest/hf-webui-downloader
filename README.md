@@ -1,7 +1,5 @@
 # HF WebUI Downloader
 
-> Author: **lordquest** — lordquest@163.com
->
 > English version: [README.en.md](README.en.md)
 
 跨平台的 Hugging Face 图形界面下载工具(WebUI)。输入仓库网页 URL 或 `owner/repo`,
