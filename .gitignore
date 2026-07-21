@@ -11,6 +11,11 @@ __pycache__/
 # Hugging Face download temp files
 *.incomplete
 
+# PyInstaller build artifacts
+dist/
+build/
+*.exe
+
 # OS / editor
 .DS_Store
 Thumbs.db

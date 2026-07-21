@@ -1,11 +1,23 @@
 """Persistence for user settings: default download dir and mirror endpoint."""
 import json
 import os
+import sys
 from pathlib import Path
 
-CONFIG_PATH = Path(__file__).resolve().parent / "config.json"
+def _app_dir() -> Path:
+    """
+    Return the application directory:
+    - Source mode: directory of this file (project root).
+    - PyInstaller onefile/exe mode: directory containing the .exe.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+APP_DIR = _app_dir()
+CONFIG_PATH = APP_DIR / "config.json"
 # Default download dir falls back to the tool's own directory.
-DEFAULT_DOWNLOAD_DIR = str(Path(__file__).resolve().parent)
+DEFAULT_DOWNLOAD_DIR = str(APP_DIR)
 
 _DEFAULTS = {
     "download_dir": DEFAULT_DOWNLOAD_DIR,
