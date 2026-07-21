@@ -28,6 +28,27 @@ python app.py
 uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
+## 打包为单文件可执行程序
+
+### Windows
+双击 `build_exe.bat` 或在命令行执行:
+```bat
+pyinstaller hf_downloader.spec
+```
+输出:`dist/hf-downloader.exe`(单文件,双击运行,自动打开浏览器)。
+
+### Linux
+```bash
+chmod +x build_linux.sh
+./build_linux.sh
+```
+输出:`dist/hf-downloader`(ELF 单文件)。运行:
+```bash
+./hf-downloader          # 默认 8000 端口
+./hf-downloader 8080     # 指定端口
+```
+启动后自动打开默认浏览器。`config.json` 保存在可执行文件同目录。
+
 ## 结构
 - `app.py` —— FastAPI 后端(解析 / 列举 / 设置 / 下载 / SSE 进度 / 取消 / 重试)
 - `hf_ops.py` —— 核心:`parse_repo_input` / `list_files` / `build_target_dir` / `DownloadTask`
